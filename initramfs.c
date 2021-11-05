@@ -32,7 +32,7 @@ static noreturn void panic(char *msg, int e) {
 	print("\n");
 	syscall(SYS_EXIT, &e, 1);
 }
-static void removedir(int parentfd, char* name) {
+static void removedircontents(int parentfd, char* name) {
 	int e;
 	int dirfd = syscall(SYS_OPENAT, &e, parentfd, name, O_RDONLY|O_NONBLOCK|O_CLOEXEC|O_DIRECTORY);
 	if(dirfd == -1)
@@ -45,16 +45,17 @@ static void removedir(int parentfd, char* name) {
 		for(struct sys_dirent *d = (struct sys_dirent*)buf; (char*)d - (char*)buf < l; d=(struct sys_dirent*)((char*)d+d->size)) {
 			if(d->name[0] == '.' && (d->name[1] == 0 || (d->name[1] == '.' && d->name[2] == 0)))
 				continue;
-			if(d->type == DT_DIR)
-				removedir(dirfd, d->name);
+			if(d->type == DT_DIR) {
+				removedircontents(dirfd, d->name);
+				if(syscall(SYS_UNLINKAT, &e, dirfd, d->name, AT_REMOVEDIR) == -1)
+					panic("could not remove directory", e);
+			}
 			else if(syscall(SYS_UNLINKAT, &e, dirfd, d->name, 0) == -1)
 				panic("could not remove file", e);
 		}
        }
 	if(syscall(SYS_CLOSE, &e, dirfd) == -1)
 		panic("error closing file descriptor", e);
-	if(syscall(SYS_UNLINKAT, &e, parentfd, name, AT_REMOVEDIR) == -1)
-		panic("could not remove directory", e);
 }
 void _start() {
 	int e;
@@ -76,25 +77,7 @@ void _start() {
 	if(syscall(SYS_MOUNT, &e, ".", "/", NULL, MS_MOVE, NULL) == -1)
 		panic("error switching root", e);
 
-	{
-		char buf[4096];
-		long l;
-		int fd = syscall(SYS_OPEN, &e, "/", O_RDONLY|O_NONBLOCK|O_CLOEXEC|O_DIRECTORY);
-		if(fd == -1)
-			panic("error opening old root", e);
-		while(l = syscall(SYS_GETDENTS64, &e, fd, buf, sizeof buf)) {
-			if(l == -1)
-				panic("error listing directory", l);
-			for(struct sys_dirent *d = (struct sys_dirent*)buf; (char*)d - (char*)buf < l; d=(struct sys_dirent*)((char*)d+d->size)) {
-				if(d->name[0] == '.' && (d->name[1] == 0 || (d->name[1] == '.' && d->name[2] == 0)))
-					continue;
-				if(d->type == DT_DIR)
-					removedir(fd, d->name);
-				else if(syscall(SYS_UNLINKAT, &e, fd, d->name, 0) == -1)
-					panic("could not remove file", e);
-			}
-		}
-	}
+	removedircontents(-1, "/");
 
 	if(syscall(SYS_CHROOT, &e, ".") == -1)
 		panic("error changing root to new root", e);
