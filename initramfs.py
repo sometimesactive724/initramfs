@@ -13,6 +13,9 @@ struct sys_dirent {
 \tchar name[];
 };
 long syscall(int number, int *error, ...);
+
+// PATH_MAX with null terminator
+#define SYS_PATH_MAX_WITH_NUL 256
 '''
     with open('/usr/include/asm/unistd_64.h') as f:
         for l in f:

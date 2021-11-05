@@ -37,7 +37,7 @@ static void removedircontents(int parentfd, char* name) {
 	int dirfd = syscall(SYS_OPENAT, &e, parentfd, name, O_RDONLY|O_NONBLOCK|O_CLOEXEC|O_DIRECTORY);
 	if(dirfd == -1)
 		panic("could not open directory", e);
-	char buf[4096];
+	char buf[sizeof(struct sys_dirent)+SYS_PATH_MAX_WITH_NUL];
 	long l;
 	while(l = syscall(SYS_GETDENTS64, &e, dirfd, buf, sizeof buf)) {
 		if(l == -1)
