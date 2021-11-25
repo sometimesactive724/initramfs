@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import os
 from os.path import join
+from pathlib import PosixPath
 from shutil import copyfile
 
 def syscall_header():
@@ -87,7 +88,20 @@ def generate(working_directory, module_directory, source_directory, out):
         'fs.btrfs.btrfs'
     ]
     modules = [(m, name := f'module{i}', join(working_directory, name + '.ko')) for i, m in enumerate(modules)]
-    for i in [spawn('zstd', '-fdo', v, join(module_directory, m.replace('.', '/')) + '.ko.zst')  for m, k, v in modules]:
+    unpackers = []
+    for m, k, v in modules:
+        name = m[m.rfind('.')+1:] + '.ko.'
+        module = next(i for i in PosixPath(join(module_directory, m[:m.rfind('.')].replace('.', '/'))).iterdir() if i.name.startswith(name))
+        tool = {
+            'xz': 'xz',
+            'zst': 'zstd'
+        }[module.name[module.name.rfind('.')+1:]]
+        fd = os.open(v, os.O_WRONLY|os.O_TRUNC|os.O_CREAT, 0o666)
+        unpackers.append(
+            spawn(tool, '--decompress', '--stdout', bytes(module.resolve()), pass_fds = ((fd, 1),))
+        )
+        os.close(fd)
+    for i in unpackers:
         wait(i)
     extract_modules(join(source_directory, 'modules.h'), {k: v for _, k, v in modules})
 
